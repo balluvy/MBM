@@ -15,7 +15,7 @@ class ProjectManager:
     def work(self, task, obj):
         processedObj = None
         if task == 'createProject':
-            self.createProject(obj)
+            processedObj = self.createProject(obj)
         elif task == 'searchProject':
             processedObj = self.searchProject(obj)
         elif task == 'updateProject':
@@ -32,7 +32,7 @@ class ProjectManager:
     # Get all users to self.userList
     def getProjects(self):
         print("Loading projects...")
-        self.projectList = []
+        self.projectList = {}
         try:
             fileObject = open(self.projectListFileName, 'rb')
         except FileNotFoundError:
@@ -50,17 +50,17 @@ class ProjectManager:
     def createProject(self, project):
         for title in self.projectList:
             if project.title == self.projectList[title].title:
-                return
-        project = Project(project.title)
+                return False
         fileObject = open(self.projectListFileName, 'ab')
         pickle.dump(project, fileObject)
         fileObject.close()
         self.projectList[project.title] = project
         self.saveProject(project)
+        self.notifyAll()
+        return True
 
     # Remove a project
     def removeProject(self, projectTitle):
-        project = self.findByTitle(projectTitle)
         try:
             del self.projectList[projectTitle]
             self.saveProjects()
@@ -85,7 +85,6 @@ class ProjectManager:
             print("Project: ", project.title, "Project Not Found")
             return None
 
-    '''
     # Add a member to a project
     def addMember(self, projectTitle, username):
         project = self.searchProject(projectTitle)
@@ -108,7 +107,6 @@ class ProjectManager:
                 self.update(project)
             except InvalidArgument:
                 return False
-    '''
 
     # notify All to getInitialProject
     def notifyAll(self, project = None):
@@ -121,15 +119,15 @@ class ProjectManager:
                 else:
                     clientSocket.send('updateProject'.encode('ascii'))
                     obj = pickle.dumps(project)
-                self.clientSocket.send(obj)
+                clientSocket.send(obj)
             except KeyError:
                 pass
 
     # Update project
     def update(self, project):
-        for i in range(len(self.projectList)):
-            if project.title == self.projectList[i].title:
-                self.projectList[i] = project
+        for title in self.projectList:
+            if project.title == self.projectList[title].title:
+                self.projectList[title] = project
         self.saveProjects()
         # notify all to getInitialProject
         self.notifyAll(project)

@@ -1,77 +1,124 @@
 import pickle
+import io
+import copy
+from Project import *
 from Event import *
 
 class EventManager:
-    def __init__(self, clientSocket):
+    def __init__(self, userManager, departmentManager):
         self.eventListFileName = "eventList"
-        self.eventList = []
-        self.clientSocket = clientSocket
+        self.userManager = userManager
+        self.departmentManager = departmentManager
+        self.eventList = {}
         self.getEvents()
 
     # Identify task for the exact function
-    def work(self, task, event):
+    def work(self, task, obj):
         processedObj = None
-        if task == 'create':
-            processedObj = self.createEvent(event)
-        elif task == 'search':
-            processedObj = self.searchEvent(event)
+        if task == 'createEvent':
+            processedObj = self.createEvent(obj)
+        elif task == 'searchEvent':
+            processedObj = self.searchEvent(obj)
         elif task == 'updateEvent':
-            self.update(event)
+            self.update(obj)
+        elif task == 'removeEvent':
+            self.removeEvent(obj)
+        elif task == 'getInitialEvent':
+            processedObj = self.getInitialEvent()
         return processedObj
+
+    def getInitialEvent(self):
+        return self.eventList
 
     # Get all users to self.userList
     def getEvents(self):
         print("Loading events...")
-        self.eventList = []
+        self.eventList = {}
         try:
-            file_object = open(self.eventListFileName, 'rb')
+            fileObject = open(self.eventListFileName, 'rb')
         except FileNotFoundError:
-            file_object = open(self.eventListFileName, 'ab')
+            fileObject = open(self.eventListFileName, 'ab')
         try:
             while True:
-                obj = pickle.load(file_object)
-                self.eventList.append(obj)
+                obj = pickle.load(fileObject)
+                self.eventList[obj.title] = obj
         except EOFError:
-            pass
+            fileObject.close()
+        except (AttributeError, io.UnsupportedOperation):
+            fileObject.close()
 
-    # Register new user
+    # Create a new event
     def createEvent(self, event):
-        for createdEvent in self.eventList:
-            if event.title == createdEvent.title:
-                print(event.title + " is not available")
-                return event.title + " is not available"
-
-        event = Event(event.title)
+        for title in self.eventList:
+            if event.title == self.eventList[title].title:
+                return False
         fileObject = open(self.eventListFileName, 'ab')
         pickle.dump(event, fileObject)
         fileObject.close()
-        self.eventList.append(event)
-        print("Created Event:", event.title, "successfully")
+        self.eventList[event.title] = event
+        self.saveEvent(event)
+        self.notifyAll()
         return True
 
-    # Log in user
-    def searchEvent(self, event):
-        for createdEvent in self.eventList:
-            if event.title == createdEvent.title:
-                print("Event: ", event.title, "Event Found")
-                return createdEvent
-        print("Event: ", event.title, "Event Not Found")
-        return "Event: ", event.title, "Event Not Found"
+    # Remove a event
+    def removeEvent(self, eventTitle):
+        try:
+            del self.eventList[eventTitle]
+            self.saveEvents()
+            self.notifyAll()
+        except KeyError:
+            return 'not found'
 
-    #update user
+    # Find a event by its title
+    def findByTitle(self, title):
+        try:
+            return self.eventList[title]
+        except KeyError:
+            return None
+
+    # Search for a event
+    def searchEvent(self, eventTitle):
+        event = self.findByTitle(eventTitle)
+        if event is not None:
+            print("Event: ", event.title, "Project Found")
+            return event
+        else:
+            print("Event: ", event.title, "Project Not Found")
+            return None
+
+    # notify All to getInitialEvent
+    def notifyAll(self, event = None):
+        for username in self.userManager.clientSocketList:
+            try:
+                clientSocket = self.userManager.clientSocketList[username]
+                if event is None:
+                    clientSocket.send('getInitialEvent'.encode('ascii'))
+                    obj = pickle.dumps(self.getInitialEvent())
+                else:
+                    clientSocket.send('updateEvent'.encode('ascii'))
+                    obj = pickle.dumps(event)
+                clientSocket.send(obj)
+            except KeyError:
+                pass
+
+    # Update event
     def update(self, event):
-        for i in range(len(self.eventList)):
-            if event.title == self.eventList[i].title:
-                self.eventList[i] = event
+        for title in self.eventList:
+            if event.title == self.eventList[title].title:
+                self.eventList[title] = event
         self.saveEvents()
+        # notify all to getInitialEvent
+        self.notifyAll(event)
 
-    def saveEvents(self):
-        fileObject = open(self.eventListFileName, 'wb')
-        for createdEvent in self.eventList:
-            pickle.dump(createdEvent, fileObject)
+    # Save event
+    def saveEvent(self, event):
+        fileObject = open(self.eventListFileName, 'ab')
+        pickle.dump(event, fileObject)
         fileObject.close()
 
-
-
-
-
+    # Save all events
+    def saveEvents(self):
+        fileObject = open(self.eventListFileName, 'wb')
+        for title in self.eventList:
+            pickle.dump(self.eventList[title], fileObject)
+        fileObject.close()
